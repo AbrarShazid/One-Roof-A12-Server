@@ -34,6 +34,8 @@ async function run() {
     const apartmentsCollection = db.collection("apartments");
     const agreementsCollection = db.collection("agreements");
 
+
+    // user add while registration 
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
@@ -49,6 +51,42 @@ async function run() {
       }
     });
 
+
+
+
+
+
+
+
+
+
+    // user role fetch for dashboard 
+    app.get("/users/:email/role", async (req,res)=>{
+
+      try {
+        const email = req.params.email;
+
+        if (!email) {
+            return res.status(400).send({ message: 'Email is required' });
+        }
+
+        const user = await usersCollection.findOne({ email });
+
+        if (!user) {
+            return res.status(404).send({ message: 'User not found' });
+        }
+
+        res.send({ role: user.role || 'user' });
+    } catch (error) {
+        console.error('Error getting user role:', error);
+        res.status(500).send({ message: 'Failed to get role' });
+    }
+    })
+
+
+
+
+
     // apartments data
 
     app.get("/apartments", async (req, res) => {
@@ -61,6 +99,7 @@ async function run() {
 
       const query = {
         rent: { $gte: minRent, $lte: maxRent },
+        isAvailable: true,
       };
 
       const total = await apartmentsCollection.countDocuments(query);
@@ -107,7 +146,7 @@ async function run() {
 
 
 
-    
+
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
     console.log(
