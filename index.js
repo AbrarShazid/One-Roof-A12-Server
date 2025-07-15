@@ -1,24 +1,17 @@
 const express = require("express");
-const cors=require("cors");
-const dotenv=require("dotenv");
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const cors = require("cors");
+const dotenv = require("dotenv");
+const { MongoClient, ServerApiVersion } = require("mongodb");
 
-
-// load environment variable from .env  
+// load environment variable from .env
 
 dotenv.config();
 
-const app=express();
-const port=process.env.PORT || 5000
+const app = express();
+const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-
-
-
-
-
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@shazid.sdvbyar.mongodb.net/?retryWrites=true&w=majority&appName=Shazid`;
 
@@ -28,7 +21,7 @@ const client = new MongoClient(uri, {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
 async function run() {
@@ -36,17 +29,12 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-
-    
     const db = client.db("buildingDB");
     const usersCollection = db.collection("users");
+    const apartmentsCollection = db.collection("apartments");
+    const agreementsCollection = db.collection("agreements");
 
-
-
-
-
-
-    app.post("/api/users", async (req, res) => {
+    app.post("/users", async (req, res) => {
       try {
         const user = req.body;
         const query = { email: user.email };
@@ -61,23 +49,70 @@ async function run() {
       }
     });
 
+    // apartments data
+
+    app.get("/apartments", async (req, res) => {
+      const page = parseInt(req.query.page) || 1;
+      const limit = 6;
+      const skip = (page - 1) * limit;
+
+      const minRent = parseInt(req.query.minRent) || 0;
+      const maxRent = parseInt(req.query.maxRent) || Infinity;
+
+      const query = {
+        rent: { $gte: minRent, $lte: maxRent },
+      };
+
+      const total = await apartmentsCollection.countDocuments(query);
+      const apartments = await apartmentsCollection
+        .find(query)
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      res.send({
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+        apartments,
+      });
+    });
+
+    // POST agreement
+    app.post("/agreements", async (req, res) => {
+      const { userName, userEmail, floor, block, apartmentNo, rent } = req.body;
+
+      const exists = await agreementsCollection.findOne({ userEmail });
+      if (exists) {
+        return res
+          .status(400)
+          .send({ message: "User already applied for an apartment" });
+      }
+
+      const agreement = {
+        userName,
+        userEmail,
+        floor,
+        block,
+        apartmentNo,
+        rent,
+        status: "pending",
+        createdDate: new Date(),
+      };
+
+      const result = await agreementsCollection.insertOne(agreement);
+      res.send(result);
+    });
 
 
 
 
-
-
-
-
-
-
-
-
-
-
+    
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
     // Ensures that the client will close when you finish/error
     // await client.close();
@@ -85,17 +120,10 @@ async function run() {
 }
 run().catch(console.dir);
 
+app.get("/", (req, res) => {
+  res.send("Building Management server running");
+});
 
-
-
-
-
-
-app.get('/',(req,res)=>{
-
-  res.send('Building Management server running');
-})
-
-app.listen(port,()=>{
-  console.log(`server is listening on port ${port}`)
-})
+app.listen(port, () => {
+  console.log(`server is listening on port ${port}`);
+});
