@@ -144,6 +144,21 @@ async function run() {
 
 
 
+    app.get('/announcement', async (req, res) => {
+      try {
+        const announcements = await announcementCollection
+          .find()
+          .sort({ createdAt: -1 }) // Sort by newest first
+          .toArray();
+    
+        res.send(announcements);
+      } catch (error) {
+        
+        res.status(500).send({ error: 'Failed to fetch announcements' });
+      }
+    });
+
+
 
 
 
