@@ -33,9 +33,9 @@ async function run() {
     const usersCollection = db.collection("users");
     const apartmentsCollection = db.collection("apartments");
     const agreementsCollection = db.collection("agreements");
+    const announcementCollection = db.collection("announcements");
 
-
-    // user add while registration 
+    // user add while registration
     app.post("/users", async (req, res) => {
       try {
         const user = req.body;
@@ -51,41 +51,27 @@ async function run() {
       }
     });
 
-
-
-
-
-
-
-
-
-
-    // user role fetch for dashboard 
-    app.get("/users/:email/role", async (req,res)=>{
-
+    // user role fetch for dashboard
+    app.get("/users/:email/role", async (req, res) => {
       try {
         const email = req.params.email;
 
         if (!email) {
-            return res.status(400).send({ message: 'Email is required' });
+          return res.status(400).send({ message: "Email is required" });
         }
 
         const user = await usersCollection.findOne({ email });
 
         if (!user) {
-            return res.status(404).send({ message: 'User not found' });
+          return res.status(404).send({ message: "User not found" });
         }
 
-        res.send({ role: user.role || 'user' });
-    } catch (error) {
-        console.error('Error getting user role:', error);
-        res.status(500).send({ message: 'Failed to get role' });
-    }
-    })
-
-
-
-
+        res.send({ role: user.role || "user" });
+      } catch (error) {
+        console.error("Error getting user role:", error);
+        res.status(500).send({ message: "Failed to get role" });
+      }
+    });
 
     // apartments data
 
@@ -142,6 +128,33 @@ async function run() {
       const result = await agreementsCollection.insertOne(agreement);
       res.send(result);
     });
+
+    // announcement section
+
+    app.post("/announcement", async (req, res) => {
+      try {
+        const announcement = req.body;
+        announcement.createdAt = new Date();
+        const result = await announcementCollection.insertOne(announcement);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
