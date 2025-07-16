@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // load environment variable from .env
 
@@ -105,7 +105,7 @@ async function run() {
 
     // POST agreement
     app.post("/agreements", async (req, res) => {
-      const { userName, userEmail, floor, block, apartmentNo, rent } = req.body;
+      const { userName, userEmail, userImg,floor, block, apartmentNo, rent } = req.body;
 
       const exists = await agreementsCollection.findOne({ userEmail });
       if (exists) {
@@ -117,6 +117,7 @@ async function run() {
       const agreement = {
         userName,
         userEmail,
+        userImg,
         floor,
         block,
         apartmentNo,
@@ -128,6 +129,102 @@ async function run() {
       const result = await agreementsCollection.insertOne(agreement);
       res.send(result);
     });
+
+
+
+    // get agreement 
+    app.get("/agreements", async (req, res) => {
+      const status = req.query.status;
+      const result = await agreementsCollection.find({ status }).toArray();
+      res.send(result);
+    });
+
+
+    // update agreement based on accept or reject with logic of availability etc 
+    // Accept agreement:
+    app.patch('/agreements/accept/:id', async (req, res) => {
+      try {
+        const agreementId = req.params.id;
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+    
+        if (!agreement) {
+          return res.status(404).send({ message: 'Agreement not found' });
+        }
+    
+        // Checkk  availability
+        const apartment = await apartmentsCollection.findOne({ apartmentNo: agreement.apartmentNo });
+        if (!apartment || !apartment.isAvailable) {
+          return res.status(400).send({ message: 'Apartment is not available' });
+        }
+    
+        // Update user with full  info
+        await usersCollection.updateOne(
+          { email: agreement.userEmail },
+          {
+            $set: {
+              role: 'member',
+              apartmentNo: agreement.apartmentNo,
+              block: agreement.block,
+              floor: agreement.floor,
+              rent: parseInt(agreement.rent)  
+            }
+          }
+        );
+    
+        // Mark  unavailable
+        await apartmentsCollection.updateOne(
+          { apartmentNo: agreement.apartmentNo },
+          { $set: { isAvailable: false } }
+        );
+    
+        // Update  status
+        await agreementsCollection.updateOne(
+          { _id: new ObjectId(agreementId) },
+          { $set: { status: 'checked' } }
+        );
+    
+        res.send({ message: 'Agreement accepted successfully' });
+      } catch (error) {
+        res.status(500).send({ message: 'Internal server error' });
+      }
+    });
+
+
+    
+    // Reject agreement: 
+    app.patch('/agreements/reject/:id', async (req, res) => {
+      try {
+        const agreementId = req.params.id;
+    
+        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+        if (!agreement) {
+          return res.status(404).send({ message: 'Agreement not found' });
+        }
+    
+        await agreementsCollection.updateOne(
+          { _id: new ObjectId(agreementId) },
+          { $set: { status: 'checked' } }
+        );
+    
+        res.send({ message: 'Agreement rejected successfully' });
+      } catch (error) {
+   
+        res.status(500).send({ message: 'Internal server error' });
+      }
+    });
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // announcement section
 
@@ -142,7 +239,7 @@ async function run() {
       }
     });
 
-
+// announcement fetch  
 
     app.get('/announcement', async (req, res) => {
       try {
