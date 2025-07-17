@@ -68,8 +68,23 @@ async function run() {
 
         res.send({ role: user.role || "user" });
       } catch (error) {
-        console.error("Error getting user role:", error);
         res.status(500).send({ message: "Failed to get role" });
+      }
+    });
+
+    // user fetch for member profile
+    app.get("/user/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        const user = await usersCollection.findOne({ email });
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send(user);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to get user" });
       }
     });
 
@@ -105,7 +120,8 @@ async function run() {
 
     // POST agreement
     app.post("/agreements", async (req, res) => {
-      const { userName, userEmail, userImg,floor, block, apartmentNo, rent } = req.body;
+      const { userName, userEmail, userImg, floor, block, apartmentNo, rent } =
+        req.body;
 
       const exists = await agreementsCollection.findOne({ userEmail });
       if (exists) {
@@ -130,101 +146,91 @@ async function run() {
       res.send(result);
     });
 
-
-
-    // get agreement 
+    // get agreement
     app.get("/agreements", async (req, res) => {
       const status = req.query.status;
       const result = await agreementsCollection.find({ status }).toArray();
       res.send(result);
     });
 
-
-    // update agreement based on accept or reject with logic of availability etc 
+    // update agreement based on accept or reject with logic of availability etc
     // Accept agreement:
-    app.patch('/agreements/accept/:id', async (req, res) => {
+    app.patch("/agreements/accept/:id", async (req, res) => {
       try {
         const agreementId = req.params.id;
-        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
-    
+        const agreement = await agreementsCollection.findOne({
+          _id: new ObjectId(agreementId),
+        });
+
         if (!agreement) {
-          return res.status(404).send({ message: 'Agreement not found' });
+          return res.status(404).send({ message: "Agreement not found" });
         }
-    
+
         // Checkk  availability
-        const apartment = await apartmentsCollection.findOne({ apartmentNo: agreement.apartmentNo });
+        const apartment = await apartmentsCollection.findOne({
+          apartmentNo: agreement.apartmentNo,
+        });
         if (!apartment || !apartment.isAvailable) {
-          return res.status(400).send({ message: 'Apartment is not available' });
+          return res
+            .status(400)
+            .send({ message: "Apartment is not available" });
         }
-    
+
         // Update user with full  info
         await usersCollection.updateOne(
           { email: agreement.userEmail },
           {
             $set: {
-              role: 'member',
+              role: "member",
               apartmentNo: agreement.apartmentNo,
               block: agreement.block,
               floor: agreement.floor,
-              rent: parseInt(agreement.rent)  
-            }
+              rent: parseInt(agreement.rent),
+              agreementAt:new Date(),
+            },
           }
         );
-    
+
         // Mark  unavailable
         await apartmentsCollection.updateOne(
           { apartmentNo: agreement.apartmentNo },
           { $set: { isAvailable: false } }
         );
-    
+
         // Update  status
         await agreementsCollection.updateOne(
           { _id: new ObjectId(agreementId) },
-          { $set: { status: 'checked' } }
+          { $set: { status: "checked" } }
         );
-    
-        res.send({ message: 'Agreement accepted successfully' });
+
+        res.send({ message: "Agreement accepted successfully" });
       } catch (error) {
-        res.status(500).send({ message: 'Internal server error' });
+        res.status(500).send({ message: "Internal server error" });
       }
     });
 
-
-    
-    // Reject agreement: 
-    app.patch('/agreements/reject/:id', async (req, res) => {
+    // Reject agreement:
+    app.patch("/agreements/reject/:id", async (req, res) => {
       try {
         const agreementId = req.params.id;
-    
-        const agreement = await agreementsCollection.findOne({ _id: new ObjectId(agreementId) });
+
+        const agreement = await agreementsCollection.findOne({
+          _id: new ObjectId(agreementId),
+        });
         if (!agreement) {
-          return res.status(404).send({ message: 'Agreement not found' });
+          return res.status(404).send({ message: "Agreement not found" });
         }
-    
+
         await agreementsCollection.updateOne(
           { _id: new ObjectId(agreementId) },
-          { $set: { status: 'checked' } }
+          { $set: { status: "checked" } }
         );
-    
-        res.send({ message: 'Agreement rejected successfully' });
+
+        res.send({ message: "Agreement rejected successfully" });
       } catch (error) {
-   
-        res.status(500).send({ message: 'Internal server error' });
+        res.status(500).send({ message: "Internal server error" });
       }
     });
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // announcement section
 
@@ -239,38 +245,20 @@ async function run() {
       }
     });
 
-// announcement fetch  
+    // announcement fetch
 
-    app.get('/announcement', async (req, res) => {
+    app.get("/announcement", async (req, res) => {
       try {
         const announcements = await announcementCollection
           .find()
           .sort({ createdAt: -1 }) // Sort by newest first
           .toArray();
-    
+
         res.send(announcements);
       } catch (error) {
-        
-        res.status(500).send({ error: 'Failed to fetch announcements' });
+        res.status(500).send({ error: "Failed to fetch announcements" });
       }
     });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
