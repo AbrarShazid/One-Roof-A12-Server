@@ -88,6 +88,55 @@ async function run() {
       }
     });
 
+    // GET all members
+    app.get("/users/members", async (req, res) => {
+      try {
+        const members = await usersCollection
+          .find({ role: "member" })
+          .toArray();
+        res.send(members);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch members" });
+      }
+    });
+
+    // manage member by admin
+
+    app.patch("/users/remove-member/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+
+        // Find  user
+        const user = await usersCollection.findOne({ email });
+
+        // Update apartment availability
+        await apartmentsCollection.updateOne(
+          { apartmentNo: user.apartmentNo },
+          { $set: { isAvailable: true } }
+        );
+
+        // Reset user role to 'user' and remove apartment-related fields
+        await usersCollection.updateOne(
+          { email },
+          {
+            $set: { role: "user" },
+            $unset: {
+              agreementAt: "",
+              apartmentNo: "",
+              block: "",
+              floor: "",
+              rent: "",
+            },
+          }
+        );
+        await agreementsCollection.deleteOne({ userEmail: email });
+
+        res.send({ message: "Member removed successfully" });
+      } catch (error) {
+        res.status(500).send({ message: "Failed to remove member" });
+      }
+    });
+
     // apartments data
 
     app.get("/apartments", async (req, res) => {
@@ -123,11 +172,19 @@ async function run() {
       const { userName, userEmail, userImg, floor, block, apartmentNo, rent } =
         req.body;
 
+
+        const user = await usersCollection.findOne({ email: userEmail });
+        if (user?.role === 'member'|| user?.role ==='admin') {
+          return res.status(400).send({ message: `${userName}, you are ${user.role === 'admin' ? 'an admin' : 'already a member'}`  });
+        }
+
       const exists = await agreementsCollection.findOne({ userEmail });
+   
+
       if (exists) {
         return res
           .status(400)
-          .send({ message: "User already applied for an apartment" });
+          .send({ message: `${userName} already applied for an apartment` });
       }
 
       const agreement = {
@@ -186,7 +243,7 @@ async function run() {
               block: agreement.block,
               floor: agreement.floor,
               rent: parseInt(agreement.rent),
-              agreementAt:new Date(),
+              agreementAt: new Date(),
             },
           }
         );
