@@ -172,14 +172,18 @@ async function run() {
       const { userName, userEmail, userImg, floor, block, apartmentNo, rent } =
         req.body;
 
-
-        const user = await usersCollection.findOne({ email: userEmail });
-        if (user?.role === 'member'|| user?.role ==='admin') {
-          return res.status(400).send({ message: `${userName}, you are ${user.role === 'admin' ? 'an admin' : 'already a member'}`  });
-        }
+      const user = await usersCollection.findOne({ email: userEmail });
+      if (user?.role === "member" || user?.role === "admin") {
+        return res
+          .status(400)
+          .send({
+            message: `${userName}, you are ${
+              user.role === "admin" ? "an admin" : "already a member"
+            }`,
+          });
+      }
 
       const exists = await agreementsCollection.findOne({ userEmail });
-   
 
       if (exists) {
         return res
@@ -316,6 +320,46 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch announcements" });
       }
     });
+
+// admin profile for all data summary 
+
+    app.get('/admin/summary', async (req, res) => {
+      try {
+        const totalUsers = await usersCollection.countDocuments({ role: { $ne: 'admin' } });
+        const totalMembers = await usersCollection.countDocuments({ role: 'member' });
+    
+        const totalRooms = await apartmentsCollection.countDocuments();
+        const availableRooms = await apartmentsCollection.countDocuments({ isAvailable: true });
+        const admin = await usersCollection.findOne({ role: 'admin' });
+    
+        res.send({
+          admin: {
+            name: admin?.name,
+            email: admin?.email,
+            image: admin?.photo,
+          },
+          totalUsers,
+          totalMembers,
+          totalRooms,
+          availableRooms,
+          agreementPercentage: totalUsers > 0 ? ((totalMembers / totalUsers) * 100).toFixed(1) : '0',
+          availablePercentage: totalRooms > 0 ? ((availableRooms / totalRooms) * 100).toFixed(1) : '0',
+        });
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to fetch admin dashboard summary', error: error.message });
+      }
+    });
+
+
+
+
+
+
+
+
+
+    
+    
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
