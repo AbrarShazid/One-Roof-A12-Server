@@ -34,6 +34,7 @@ async function run() {
     const apartmentsCollection = db.collection("apartments");
     const agreementsCollection = db.collection("agreements");
     const announcementCollection = db.collection("announcements");
+    const couponCollection = db.collection("coupons");
 
     // user add while registration
     app.post("/users", async (req, res) => {
@@ -321,6 +322,82 @@ async function run() {
       }
     });
 
+
+
+    // ---------------Coupons---------------------------------
+
+    // coupon post 
+
+    app.post('/coupons', async (req, res) => {
+      try {
+        const { code, discount, description } = req.body;
+        const parsedDiscount = parseFloat(discount);
+        // Check  duplicate code
+        const exists = await couponCollection.findOne({ code });
+        if (exists) {
+          return res.status(409).send({ message: 'Coupon code already exists' });
+        }
+    
+        const newCoupon = {
+          code,
+          discount: parsedDiscount,
+          description,
+          createdAt: new Date(),
+          isAvailable:true
+        };
+    
+        const result = await couponCollection.insertOne(newCoupon);
+        res.status(201).send(result);
+      } catch (err) {
+        res.status(500).send({ message: 'Failed to create coupon', error: err.message });
+      }
+    });
+    
+    // Get all coupons
+    app.get('/coupons', async (req, res) => {
+      try {
+        const coupons = await couponCollection.find().sort({ createdAt: -1 }).toArray();
+        res.send(coupons);
+      } catch (err) {
+        res.status(500).send({ message: 'Failed to fetch coupons', error: err.message });
+      }
+    });
+    
+    // update coupon availability 
+    app.patch('/coupons/:id', async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { isAvailable } = req.body;
+    
+        const result = await couponCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { isAvailable: isAvailable } }
+        );
+    
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Coupon not found' });
+        }
+    
+        res.send({ message: 'Coupon availability updated' });
+      } catch (err) {
+        res.status(500).send({ message: 'Failed to update coupon', error: err.message });
+      }
+    });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // admin profile for all data summary 
 
     app.get('/admin/summary', async (req, res) => {
@@ -358,7 +435,7 @@ async function run() {
 
 
 
-    
+
     
 
     // Send a ping to confirm a successful connection
