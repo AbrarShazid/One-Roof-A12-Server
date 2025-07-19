@@ -7,9 +7,16 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 dotenv.config();
 
+
+
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
+
+
 const app = express();
 const port = process.env.PORT || 5000;
 
+
+// middleware
 app.use(cors());
 app.use(express.json());
 
@@ -35,7 +42,9 @@ async function run() {
     const agreementsCollection = db.collection("agreements");
     const announcementCollection = db.collection("announcements");
     const couponCollection = db.collection("coupons");
+    const paymentCollection = db.collection("payments");
 
+    
     // user add while registration
     app.post("/users", async (req, res) => {
       try {
@@ -387,14 +396,35 @@ async function run() {
 
 
 
+// ----------------------------------------payment part  -------------------------
+
+app.post('/create-payment-intent', async (req, res) => {
+  try {
+    const { rent } = req.body;
+
+    const amount = parseInt(rent * 100); 
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount,
+      currency: 'usd',
+      payment_method_types: ['card'],
+    });
+
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    res.status(500).send({ message: 'Failed to create payment intent', error: error.message });
+  }
+});
 
 
-
-
-
-
-
-
+// store record of payment 
+app.post('/payments', async (req, res) => {
+  const payment = req.body;
+  const result = await paymentCollection.insertOne(payment);
+  res.send(result);
+});
 
 
 
@@ -428,15 +458,6 @@ async function run() {
     });
 
 
-
-
-
-
-
-
-
-
-    
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
