@@ -259,8 +259,8 @@ async function run() {
       res.send(result);
     });
 
-    // get agreement
-    app.get("/agreements",verifyFBToken, async (req, res) => {
+    // get agreement list for admin only
+    app.get("/agreements",verifyFBToken, verifyAdmin, async (req, res) => {
       const status = req.query.status;
       const result = await agreementsCollection.find({ status }).toArray();
       res.send(result);
@@ -268,7 +268,7 @@ async function run() {
 
     // update agreement based on accept or reject with logic of availability etc
     // Accept agreement:
-    app.patch("/agreements/accept/:id",verifyFBToken, async (req, res) => {
+    app.patch("/agreements/accept/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const agreementId = req.params.id;
         const agreement = await agreementsCollection.findOne({
