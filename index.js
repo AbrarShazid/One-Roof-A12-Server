@@ -2,23 +2,27 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-
+const admin = require("firebase-admin");
 // load environment variable from .env
 
 dotenv.config();
 
-
-
-const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_KEY);
-
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-
 // middleware
 app.use(cors());
 app.use(express.json());
+
+
+const decodedKey=Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf8')
+const serviceAccount = JSON.parse(decodedKey);;
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@shazid.sdvbyar.mongodb.net/?retryWrites=true&w=majority&appName=Shazid`;
 
@@ -34,7 +38,7 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("buildingDB");
     const usersCollection = db.collection("users");
@@ -44,7 +48,51 @@ async function run() {
     const couponCollection = db.collection("coupons");
     const paymentCollection = db.collection("payments");
 
-    
+    // custom middlewares
+
+    const verifyFBToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader) {
+        return res.status(401).send({ message: "Unauthorized access!" });
+      }
+      const token = authHeader.split(' ')[1];
+      if (!token) {
+        return res.status(401).send({ message: "Unauthorized access!" });
+      }
+
+      // verify
+
+      try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+        next();
+      } catch (error) {
+        return res.status(403).send({ message: "Forbidden access!" });
+      }
+    };
+
+    // admin role check 
+    const verifyAdmin= async(req,res,next)=>{
+      const email=req.decoded.email
+      const query={email}
+      const user= await usersCollection.findOne(query);
+      if(!user || user.role!=='admin'){
+        return res.status(403).send({message:"Forbidden access"})
+      }
+      next();
+    }
+    // member role check 
+    const verifyMember= async(req,res,next)=>{
+      const email=req.decoded.email
+      const query={email}
+      const user= await usersCollection.findOne(query);
+      if(!user || user.role!=='member'){
+        return res.status(403).send({message:"Forbidden access"})
+      }
+      next();
+    }
+
+
     // user add while registration
     app.post("/users", async (req, res) => {
       try {
@@ -62,7 +110,7 @@ async function run() {
     });
 
     // user role fetch for dashboard
-    app.get("/users/:email/role", async (req, res) => {
+    app.get("/users/:email/role",verifyFBToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -83,7 +131,7 @@ async function run() {
     });
 
     // user fetch for member profile
-    app.get("/user/:email", async (req, res) => {
+    app.get("/user/:email",verifyFBToken, async (req, res) => {
       try {
         const email = req.params.email;
 
@@ -99,7 +147,7 @@ async function run() {
     });
 
     // GET all members
-    app.get("/users/members", async (req, res) => {
+    app.get("/users/members",verifyFBToken,verifyAdmin,  async (req, res) => {
       try {
         const members = await usersCollection
           .find({ role: "member" })
@@ -112,19 +160,15 @@ async function run() {
 
     // manage member by admin
 
-    app.patch("/users/remove-member/:email", async (req, res) => {
+    app.patch("/users/remove-member/:email", verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const email = req.params.email;
-
-        // Find  user
         const user = await usersCollection.findOne({ email });
-
         // Update apartment availability
         await apartmentsCollection.updateOne(
           { apartmentNo: user.apartmentNo },
           { $set: { isAvailable: true } }
         );
-
         // Reset user role to 'user' and remove apartment-related fields
         await usersCollection.updateOne(
           { email },
@@ -178,19 +222,17 @@ async function run() {
     });
 
     // POST agreement
-    app.post("/agreements", async (req, res) => {
+    app.post("/agreements",verifyFBToken, async (req, res) => {
       const { userName, userEmail, userImg, floor, block, apartmentNo, rent } =
         req.body;
 
       const user = await usersCollection.findOne({ email: userEmail });
       if (user?.role === "member" || user?.role === "admin") {
-        return res
-          .status(400)
-          .send({
-            message: `${userName}, you are ${
-              user.role === "admin" ? "an admin" : "already a member"
-            }`,
-          });
+        return res.status(400).send({
+          message: `${userName}, you are ${
+            user.role === "admin" ? "an admin" : "already a member"
+          }`,
+        });
       }
 
       const exists = await agreementsCollection.findOne({ userEmail });
@@ -218,7 +260,7 @@ async function run() {
     });
 
     // get agreement
-    app.get("/agreements", async (req, res) => {
+    app.get("/agreements",verifyFBToken, verifyAdmin, async (req, res) => {
       const status = req.query.status;
       const result = await agreementsCollection.find({ status }).toArray();
       res.send(result);
@@ -226,7 +268,7 @@ async function run() {
 
     // update agreement based on accept or reject with logic of availability etc
     // Accept agreement:
-    app.patch("/agreements/accept/:id", async (req, res) => {
+    app.patch("/agreements/accept/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const agreementId = req.params.id;
         const agreement = await agreementsCollection.findOne({
@@ -281,7 +323,7 @@ async function run() {
     });
 
     // Reject agreement:
-    app.patch("/agreements/reject/:id", async (req, res) => {
+    app.patch("/agreements/reject/:id", verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const agreementId = req.params.id;
 
@@ -305,7 +347,7 @@ async function run() {
 
     // announcement section
 
-    app.post("/announcement", async (req, res) => {
+    app.post("/announcement",verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const announcement = req.body;
         announcement.createdAt = new Date();
@@ -318,7 +360,7 @@ async function run() {
 
     // announcement fetch
 
-    app.get("/announcement", async (req, res) => {
+    app.get("/announcement",verifyFBToken, async (req, res) => {
       try {
         const announcements = await announcementCollection
           .find()
@@ -331,114 +373,140 @@ async function run() {
       }
     });
 
-
-
     // ---------------Coupons---------------------------------
 
-    // coupon post 
+    // coupon post
 
-    app.post('/coupons', async (req, res) => {
+    app.post("/coupons",verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const { code, discount, description } = req.body;
         const parsedDiscount = parseFloat(discount);
         // Check  duplicate code
         const exists = await couponCollection.findOne({ code });
         if (exists) {
-          return res.status(409).send({ message: 'Coupon code already exists' });
+          return res
+            .status(409)
+            .send({ message: "Coupon code already exists" });
         }
-    
+
         const newCoupon = {
           code,
           discount: parsedDiscount,
           description,
           createdAt: new Date(),
-          isAvailable:true
+          isAvailable: true,
         };
-    
+
         const result = await couponCollection.insertOne(newCoupon);
         res.status(201).send(result);
       } catch (err) {
-        res.status(500).send({ message: 'Failed to create coupon', error: err.message });
+        res
+          .status(500)
+          .send({ message: "Failed to create coupon", error: err.message });
       }
     });
-    
+
     // Get all coupons
-    app.get('/coupons', async (req, res) => {
+    app.get("/coupons", async (req, res) => {
       try {
-        const coupons = await couponCollection.find().sort({ createdAt: -1 }).toArray();
+        const coupons = await couponCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .toArray();
         res.send(coupons);
       } catch (err) {
-        res.status(500).send({ message: 'Failed to fetch coupons', error: err.message });
+        res
+          .status(500)
+          .send({ message: "Failed to fetch coupons", error: err.message });
       }
     });
-    
-    // update coupon availability 
-    app.patch('/coupons/:id', async (req, res) => {
+
+    // update coupon availability
+    app.patch("/coupons/:id",verifyFBToken,verifyAdmin, async (req, res) => {
       try {
         const id = req.params.id;
         const { isAvailable } = req.body;
-    
+
         const result = await couponCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: { isAvailable: isAvailable } }
         );
-    
+
         if (result.matchedCount === 0) {
-          return res.status(404).send({ message: 'Coupon not found' });
+          return res.status(404).send({ message: "Coupon not found" });
         }
-    
-        res.send({ message: 'Coupon availability updated' });
+
+        res.send({ message: "Coupon availability updated" });
       } catch (err) {
-        res.status(500).send({ message: 'Failed to update coupon', error: err.message });
+        res
+          .status(500)
+          .send({ message: "Failed to update coupon", error: err.message });
       }
     });
 
+    // ----------------------------------------payment part  -------------------------
 
-
-
-// ----------------------------------------payment part  -------------------------
-
-app.post('/create-payment-intent', async (req, res) => {
-  try {
-    const { rent } = req.body;
-
-    const amount = parseInt(rent * 100); 
-
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount,
-      currency: 'usd',
-      payment_method_types: ['card'],
-    });
-
-    res.send({
-      clientSecret: paymentIntent.client_secret,
-    });
-  } catch (error) {
-    res.status(500).send({ message: 'Failed to create payment intent', error: error.message });
-  }
-});
-
-
-// store record of payment 
-app.post('/payments', async (req, res) => {
-  const payment = req.body;
-  const result = await paymentCollection.insertOne(payment);
-  res.send(result);
-});
-
-
-
-// admin profile for all data summary 
-
-    app.get('/admin/summary', async (req, res) => {
+    app.post("/create-payment-intent",verifyFBToken,verifyMember, async (req, res) => {
       try {
-        const totalUsers = await usersCollection.countDocuments({ role: { $ne: 'admin' } });
-        const totalMembers = await usersCollection.countDocuments({ role: 'member' });
-    
+        const { rent } = req.body;
+
+        const amount = parseInt(rent * 100);
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount,
+          currency: "usd",
+          payment_method_types: ["card"],
+        });
+
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({
+            message: "Failed to create payment intent",
+            error: error.message,
+          });
+      }
+    });
+
+    // store record of payment
+    app.post("/payments",verifyFBToken,verifyMember, async (req, res) => {
+      const payment = req.body;
+      const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
+
+    // get payment history
+    app.get("/payments", verifyFBToken,verifyMember, async (req, res) => {
+      const email = req.query.email;
+
+      if (req.decoded.email !== email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const paymentList = await paymentCollection.find({ email }).toArray();
+      res.send(paymentList);
+    });
+
+    // admin profile for all data summary
+
+    app.get("/admin/summary",verifyFBToken,verifyAdmin, async (req, res) => {
+      try {
+        const totalUsers = await usersCollection.countDocuments({
+          role: { $ne: "admin" },
+        });
+        const totalMembers = await usersCollection.countDocuments({
+          role: "member",
+        });
+
         const totalRooms = await apartmentsCollection.countDocuments();
-        const availableRooms = await apartmentsCollection.countDocuments({ isAvailable: true });
-        const admin = await usersCollection.findOne({ role: 'admin' });
-    
+        const availableRooms = await apartmentsCollection.countDocuments({
+          isAvailable: true,
+        });
+        const admin = await usersCollection.findOne({ role: "admin" });
+
         res.send({
           admin: {
             name: admin?.name,
@@ -449,15 +517,24 @@ app.post('/payments', async (req, res) => {
           totalMembers,
           totalRooms,
           availableRooms,
-          agreementPercentage: totalUsers > 0 ? ((totalMembers / totalUsers) * 100).toFixed(1) : '0',
-          availablePercentage: totalRooms > 0 ? ((availableRooms / totalRooms) * 100).toFixed(1) : '0',
+          agreementPercentage:
+            totalUsers > 0
+              ? ((totalMembers / totalUsers) * 100).toFixed(1)
+              : "0",
+          availablePercentage:
+            totalRooms > 0
+              ? ((availableRooms / totalRooms) * 100).toFixed(1)
+              : "0",
         });
       } catch (error) {
-        res.status(500).send({ message: 'Failed to fetch admin dashboard summary', error: error.message });
+        res
+          .status(500)
+          .send({
+            message: "Failed to fetch admin dashboard summary",
+            error: error.message,
+          });
       }
     });
-
-
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
