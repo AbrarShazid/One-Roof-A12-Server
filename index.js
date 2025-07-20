@@ -260,7 +260,7 @@ async function run() {
     });
 
     // get agreement
-    app.get("/agreements",verifyFBToken, verifyAdmin, async (req, res) => {
+    app.get("/agreements",verifyFBToken, async (req, res) => {
       const status = req.query.status;
       const result = await agreementsCollection.find({ status }).toArray();
       res.send(result);
