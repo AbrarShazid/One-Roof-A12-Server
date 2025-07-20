@@ -268,7 +268,7 @@ async function run() {
 
     // update agreement based on accept or reject with logic of availability etc
     // Accept agreement:
-    app.patch("/agreements/accept/:id",verifyFBToken,verifyAdmin, async (req, res) => {
+    app.patch("/agreements/accept/:id",verifyFBToken, async (req, res) => {
       try {
         const agreementId = req.params.id;
         const agreement = await agreementsCollection.findOne({
